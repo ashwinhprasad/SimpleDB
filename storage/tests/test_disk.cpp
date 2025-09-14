@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <cstring>
-#include "disk.hpp"
+#include "storage/disk.hpp"
 
 struct Student {
     std::string name;

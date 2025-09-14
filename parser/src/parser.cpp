@@ -1,4 +1,6 @@
-#include "parser.hpp"
+#include "parser/parser.hpp"
+#include "parser/token.hpp"
+#include "parser/lexer.hpp"
 #include <memory>
 #include <sstream>
 #include <utility>

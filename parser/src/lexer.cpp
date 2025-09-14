@@ -1,4 +1,4 @@
-#include "lexer.hpp"
+#include "parser/lexer.hpp"
 #include <cctype>
 
 static bool is_ident_start(char c) { return std::isalpha(c) || c == '_'; }

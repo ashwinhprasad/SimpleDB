@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <mutex>
+#include <memory>
 #include <shared_mutex>
 #include <functional>
 #include <list>
@@ -96,6 +97,43 @@ public:
             }
 
             os << "\n";
+        }
+    }
+
+    Value get_or_insert_and_get(const Key &key, const Value &value)
+    {
+        std::shared_mutex &m = getMutex(key);
+
+        {
+            // First, try to get with shared lock (fast path)
+            std::shared_lock sharedLock(m);
+            std::size_t index = hashFunction(key) % buckets.size();
+            auto &bucket = buckets[index];
+            auto it = std::find_if(bucket.begin(), bucket.end(),
+                                   [&](const Node &node) { return node.key == key; });
+            if (it != bucket.end())
+            {
+                return it->value;
+            }
+        }
+
+        // Slow path: acquire unique lock and check again (double-checked locking)
+        std::unique_lock uniqueLock(m);
+        std::size_t index = hashFunction(key) % buckets.size();
+        auto &bucket = buckets[index];
+        auto it = std::find_if(bucket.begin(), bucket.end(),
+                               [&](const Node &node) { return node.key == key; });
+
+        if (it != bucket.end())
+        {
+            return std::make_shared<Value>(it->value);
+        }
+        else
+        {
+            // Insert new value
+            Value val = value;
+            bucket.push_back({key, val});
+            return val;
         }
     }
 

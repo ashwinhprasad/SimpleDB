@@ -4,7 +4,6 @@
 #include <iostream>
 #include <vector>
 #include <mutex>
-#include <memory>
 #include <shared_mutex>
 #include <functional>
 #include <list>
@@ -100,42 +99,41 @@ public:
         }
     }
 
+
     Value get_or_insert_and_get(const Key &key, const Value &value)
     {
         std::shared_mutex &m = getMutex(key);
+        std::size_t index = hashFunction(key) % buckets.size();
+        auto &bucket = buckets[index];
 
         {
-            // First, try to get with shared lock (fast path)
+            // Fast path: shared lock to check if key exists
             std::shared_lock sharedLock(m);
-            std::size_t index = hashFunction(key) % buckets.size();
-            auto &bucket = buckets[index];
             auto it = std::find_if(bucket.begin(), bucket.end(),
-                                   [&](const Node &node) { return node.key == key; });
+                                [&](const Node &node) { return node.key == key; });
             if (it != bucket.end())
             {
                 return it->value;
             }
         }
 
-        // Slow path: acquire unique lock and check again (double-checked locking)
+        // Slow path: unique lock to insert if not found
         std::unique_lock uniqueLock(m);
-        std::size_t index = hashFunction(key) % buckets.size();
-        auto &bucket = buckets[index];
         auto it = std::find_if(bucket.begin(), bucket.end(),
-                               [&](const Node &node) { return node.key == key; });
+                            [&](const Node &node) { return node.key == key; });
 
         if (it != bucket.end())
         {
-            return std::make_shared<Value>(it->value);
+            return it->value; // just return the found value
         }
         else
         {
-            // Insert new value
-            Value val = value;
-            bucket.push_back({key, val});
-            return val;
+            bucket.push_back({key, value});
+            return value;
         }
     }
+
+
 
     // Destructor to clean up memory
     ~ConcurrentHashMap() = default; // The default destructor is sufficient for cleanup.

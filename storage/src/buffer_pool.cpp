@@ -66,38 +66,40 @@ class BufferPoolManager;
 
 template<typename LockType>
 class PageHandle {
+
 private:
     std::vector<uint8_t>* data_;
     LockType lock_;
     PageId page_id_;
-    BufferPoolManager* buffer_manager_;
     bool is_dirty_;
 
+    std::function<void(const PageId)> unpin_page_fn_;
+    std::function<void(const PageId&)> mark_page_dirty_fn_;
+
+    void cleanup() {
+        unpin_page_fn_(page_id_);
+        lock_.unlock();
+    }
+
 public:
-    PageHandle(std::vector<uint8_t>* data, LockType lock, const PageId& page_id, 
-               BufferPoolManager* buffer_manager)
-        : data_(data), lock_(std::move(lock)), page_id_(page_id), 
-          buffer_manager_(buffer_manager), is_dirty_(false) {}
+
+    PageHandle(std::vector<uint8_t>* data, LockType lock, const PageId& page_id)
+        : data_(data), lock_(std::move(lock)), page_id_(page_id), is_dirty_(false)  {}
     
-    // Move constructor
+
     PageHandle(PageHandle&& other) noexcept
-        : data_(other.data_), lock_(std::move(other.lock_)), page_id_(other.page_id_),
-          buffer_manager_(other.buffer_manager_), is_dirty_(other.is_dirty_) {
+        : data_(other.data_), lock_(std::move(other.lock_)), page_id_(other.page_id_), is_dirty_(other.is_dirty_) {
         other.data_ = nullptr;
-        other.buffer_manager_ = nullptr;
     }
     
-    // Move assignment
     PageHandle& operator=(PageHandle&& other) noexcept {
         if (this != &other) {
             cleanup();
             data_ = other.data_;
             lock_ = std::move(other.lock_);
             page_id_ = other.page_id_;
-            buffer_manager_ = other.buffer_manager_;
             is_dirty_ = other.is_dirty_;
             other.data_ = nullptr;
-            other.buffer_manager_ = nullptr;
         }
         return *this;
     }
@@ -120,10 +122,7 @@ public:
     const std::vector<uint8_t>& operator*() const { return *data_; }
     
     void mark_dirty() { is_dirty_ = true; }
-    bool is_valid() const { return data_ != nullptr && buffer_manager_ != nullptr; }
-
-private:
-    void cleanup();
+    bool is_valid() const { return data_ != nullptr; }    
 };
 
 
@@ -143,6 +142,7 @@ private:
     mutable std::mutex free_frames_mutex_;
     std::shared_mutex buffer_pool_mutex_;
     
+
     BufferPoolManager(size_t pool_size = DEFAULT_BUFFER_POOL_SIZE) 
         : pool_size_(pool_size) {
         frames_.reserve(pool_size_);
@@ -206,13 +206,13 @@ private:
                 return PageHandle<std::unique_lock<std::shared_mutex>>(
                     &frame->data, 
                     std::unique_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
             } else {
                 frame->page_mutex.lock_shared();
                 return PageHandle<std::shared_lock<std::shared_mutex>>(
                     &frame->data,
                     std::shared_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
             }
         }
         
@@ -233,13 +233,13 @@ private:
                 return PageHandle<std::unique_lock<std::shared_mutex>>(
                     &frame->data, 
                     std::unique_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
             } else {
                 frame->page_mutex.lock_shared();
                 return PageHandle<std::shared_lock<std::shared_mutex>>(
                     &frame->data,
                     std::shared_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
             }
             
         
@@ -263,13 +263,13 @@ private:
             return PageHandle<std::unique_lock<std::shared_mutex>>(
                     &frame->data, 
                     std::unique_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
         } else {
             frame->page_mutex.lock_shared();
             return PageHandle<std::shared_lock<std::shared_mutex>>(
                     &frame->data,
                     std::shared_lock<std::shared_mutex>(frame->page_mutex, std::adopt_lock),
-                    pid, this);
+                    pid);
         }
     }
     
